@@ -48,6 +48,16 @@ HOST=0.0.0.0 PORT=3000 HRIS_DB=/var/lib/hris/hris.db npm start
 `HRIS_DB` on a persistent disk — the database is the only state. `/health` is the
 readiness probe and the image already declares it as its health check.
 
+### Concurrency
+
+One or more app processes may share the same database file. A writer waits up
+to `HRIS_BUSY_TIMEOUT_MS` (default `5000`) for the lock instead of failing
+immediately. If two requests race to create the same period, the unique index
+decides: one wins with `201` and the other gets the same `409 "already exists"`
+as the sequential path, not a `500`. Completing a run is a single conditional
+update, so a second `POST …/complete` returns `409` and leaves `completed_at`
+untouched.
+
 ### Shutdown
 
 On `SIGTERM` or `SIGINT` the app stops accepting connections, lets in-flight

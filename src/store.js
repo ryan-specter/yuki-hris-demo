@@ -4,6 +4,23 @@ import { PTKP_STATUSES, computePayslip, computeThr } from './payroll.js';
 const nowIso = () => new Date().toISOString();
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
+// node:sqlite reports SQLite result codes on the error; the message is the
+// fallback for older runtimes.
+const SQLITE_BUSY = 5;
+const SQLITE_CONSTRAINT_UNIQUE = 2067;
+
+const sqliteCode = (error) => (typeof error?.errcode === 'number' ? error.errcode : null);
+
+const isUniqueViolation = (error) =>
+  sqliteCode(error) === SQLITE_CONSTRAINT_UNIQUE ||
+  /UNIQUE constraint failed/.test(String(error?.message));
+
+const isBusy = (error) =>
+  sqliteCode(error) === SQLITE_BUSY ||
+  /database (table )?is locked/i.test(String(error?.message));
+
+const busyError = () => new HttpError(503, 'the payroll database is busy, try again');
+
 export function normalizePeriod(value) {
   const period = String(value ?? '').trim();
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(period)) {
@@ -324,8 +341,11 @@ export function createRun(db, input) {
   const totalEmployer = computed.reduce((sum, row) => sum + row.payslip.employerTotal, 0);
   const totalEmployerCost = totalGross + totalEmployer;
 
-  db.exec('BEGIN IMMEDIATE');
+  let inTransaction = false;
   try {
+    db.exec('BEGIN IMMEDIATE');
+    inTransaction = true;
+
     const info = db
       .prepare(
         `INSERT INTO payroll_runs
@@ -378,9 +398,23 @@ export function createRun(db, input) {
     }
 
     db.exec('COMMIT');
+    inTransaction = false;
     return runDetail(db, runId);
   } catch (error) {
-    db.exec('ROLLBACK');
+    if (inTransaction) {
+      try {
+        db.exec('ROLLBACK');
+      } catch {
+        // SQLite may already have rolled the transaction back.
+      }
+    }
+    // Another process can create the same period between the check above and
+    // this insert; the unique index is the authority, so report the conflict
+    // the same way the pre-check does.
+    if (isUniqueViolation(error)) {
+      throw new HttpError(409, `a payroll run for ${period} already exists`);
+    }
+    if (isBusy(error)) throw busyError();
     throw error;
   }
 }
@@ -393,10 +427,23 @@ export function completeRun(db, runId) {
   }
   if (!detail.payslips.length) throw new HttpError(422, 'a payroll run needs at least one payslip');
 
-  db.prepare(`UPDATE payroll_runs SET status = 'completed', completed_at = ? WHERE id = ?`).run(
-    nowIso(),
-    detail.run.id,
-  );
+  // Completing is a single conditional update, so two concurrent completions
+  // cannot both succeed and rewrite completed_at.
+  try {
+    const info = db
+      .prepare(
+        `UPDATE payroll_runs SET status = 'completed', completed_at = ?
+          WHERE id = ? AND status = 'draft'`,
+      )
+      .run(nowIso(), detail.run.id);
+    if (info.changes === 0) {
+      throw new HttpError(409, `payroll for ${detail.run.period} is already completed`);
+    }
+  } catch (error) {
+    if (error instanceof HttpError) throw error;
+    if (isBusy(error)) throw busyError();
+    throw error;
+  }
   return runDetail(db, detail.run.id);
 }
 

@@ -109,6 +109,10 @@ function migrate(db) {
   ensureColumn(db, 'payroll_runs', 'total_employer_cost', 'INTEGER NOT NULL DEFAULT 0');
 }
 
+// How long a writer waits for another connection holding the write lock before
+// reporting the database as busy. Two app processes can share one database file.
+const BUSY_TIMEOUT_MS = Number(process.env.HRIS_BUSY_TIMEOUT_MS ?? 5_000);
+
 export function openDb(file = ':memory:') {
   if (file !== ':memory:') {
     fs.mkdirSync(path.dirname(path.resolve(file)), { recursive: true });
@@ -116,6 +120,9 @@ export function openDb(file = ':memory:') {
   const db = new DatabaseSync(file);
   db.exec('PRAGMA journal_mode = WAL;');
   db.exec('PRAGMA foreign_keys = ON;');
+  db.exec(
+    `PRAGMA busy_timeout = ${Number.isFinite(BUSY_TIMEOUT_MS) ? Math.max(0, BUSY_TIMEOUT_MS) : 5_000};`,
+  );
   db.exec(SCHEMA);
   migrate(db);
   return db;
