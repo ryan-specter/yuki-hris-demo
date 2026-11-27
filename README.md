@@ -56,7 +56,9 @@ immediately. If two requests race to create the same period, the unique index
 decides: one wins with `201` and the other gets the same `409 "already exists"`
 as the sequential path, not a `500`. Completing a run is a single conditional
 update, so a second `POST …/complete` returns `409` and leaves `completed_at`
-untouched.
+untouched. Employee numbers are derived from the highest existing number, so two
+simultaneous creates can pick the same one; the loser retries with a fresh
+maximum instead of failing, which keeps `EMP-0001`, `EMP-0002`, … gap-free.
 
 ### Shutdown
 

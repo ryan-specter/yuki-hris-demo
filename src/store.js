@@ -21,6 +21,9 @@ const isBusy = (error) =>
 
 const busyError = () => new HttpError(503, 'the payroll database is busy, try again');
 
+// Two writers can derive the same employee number; retry with a fresh maximum.
+const EMPLOYEE_NO_ATTEMPTS = 5;
+
 export function normalizePeriod(value) {
   const period = String(value ?? '').trim();
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(period)) {
@@ -94,30 +97,48 @@ export function createEmployee(db, input) {
   }
 
   const joinDate = normalizeDate(input.join_date, 'join_date');
-  const next =
-    db.prepare(`SELECT COALESCE(MAX(CAST(substr(employee_no, 5) AS INTEGER)), 0) + 1 AS n FROM employees`).get().n;
-  const employeeNo = `EMP-${String(next).padStart(4, '0')}`;
+  const insert = db.prepare(
+    `INSERT INTO employees
+       (employee_no, full_name, email, position, department, join_date, status, npwp, ptkp_status, bank_account, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?)`,
+  );
+  const nextNumber = db.prepare(
+    `SELECT COALESCE(MAX(CAST(substr(employee_no, 5) AS INTEGER)), 0) + 1 AS n FROM employees`,
+  );
 
-  const info = db
-    .prepare(
-      `INSERT INTO employees
-         (employee_no, full_name, email, position, department, join_date, status, npwp, ptkp_status, bank_account, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?)`,
-    )
-    .run(
-      employeeNo,
-      fullName,
-      email || null,
-      text(input.position, 120) || null,
-      text(input.department, 120) || null,
-      joinDate,
-      text(input.npwp, 40) || null,
-      ptkpStatus,
-      text(input.bank_account, 60) || null,
-      nowIso(),
-    );
+  // The number comes from the highest existing one, so two processes can pick
+  // the same value. The unique index rejects the loser; recompute and retry
+  // rather than failing the request.
+  for (let attempt = 1; attempt <= EMPLOYEE_NO_ATTEMPTS; attempt += 1) {
+    const employeeNo = `EMP-${String(nextNumber.get().n).padStart(4, '0')}`;
+    try {
+      const info = insert.run(
+        employeeNo,
+        fullName,
+        email || null,
+        text(input.position, 120) || null,
+        text(input.department, 120) || null,
+        joinDate,
+        text(input.npwp, 40) || null,
+        ptkpStatus,
+        text(input.bank_account, 60) || null,
+        nowIso(),
+      );
+      return employeeDetail(db, Number(info.lastInsertRowid));
+    } catch (error) {
+      const numberTaken =
+        isUniqueViolation(error) && /employees\.employee_no/.test(String(error.message));
+      if (!numberTaken) {
+        if (isBusy(error)) throw busyError();
+        throw error;
+      }
+      if (attempt === EMPLOYEE_NO_ATTEMPTS) {
+        throw new HttpError(503, 'could not allocate an employee number, try again');
+      }
+    }
+  }
 
-  return employeeDetail(db, Number(info.lastInsertRowid));
+  throw new HttpError(503, 'could not allocate an employee number, try again');
 }
 
 export function employeeDetail(db, employeeId) {

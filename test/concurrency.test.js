@@ -6,6 +6,8 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { openDb } from '../src/db.js';
+import * as store from '../src/store.js';
 
 const root = path.resolve(import.meta.dirname, '..');
 
@@ -213,6 +215,100 @@ test('two processes creating different periods keep their payslips separate', as
       assert.equal(total.payslips, 1);
       assert.equal(total.gross, 9_544_798);
     }
+  } finally {
+    await stop(first);
+    await stop(second);
+    fs.rmSync(workDir, { recursive: true, force: true });
+  }
+});
+
+test('a taken employee number makes the insert retry with the next one', async () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hris-concurrency-'));
+  const dbFile = path.join(workDir, 'hris.db');
+  const db = openDb(dbFile);
+  let helper = null;
+  try {
+    // A separate process holds an uncommitted EMP-0001. Our read of MAX still
+    // sees zero, so the first insert must lose the unique index and retry.
+    const helperPath = path.join(workDir, 'hold.mjs');
+    fs.writeFileSync(
+      helperPath,
+      `import { DatabaseSync } from 'node:sqlite';
+const db = new DatabaseSync(process.env.HELPER_DB);
+const insert = db.prepare("INSERT INTO employees (employee_no, full_name, join_date, status, ptkp_status, created_at) VALUES ('EMP-0001', 'Held Writer', '2026-11-02', 'active', 'TK/0', '2026-11-27T00:00:00.000Z')");
+db.exec('BEGIN IMMEDIATE');
+insert.run();
+console.log('inserted');
+setTimeout(() => { db.exec('COMMIT'); db.close(); console.log('committed'); }, 1200);
+`,
+    );
+    helper = spawn(process.execPath, [helperPath], {
+      env: { ...process.env, HELPER_DB: dbFile },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    helper.stdout.setEncoding('utf8');
+    const inserted = new Promise((resolve) => {
+      helper.stdout.on('data', (chunk) => {
+        if (chunk.includes('inserted')) resolve();
+      });
+    });
+    await inserted;
+
+    const started = Date.now();
+    const created = store.createEmployee(db, { full_name: 'Race Winner', join_date: '2026-11-02' });
+    const elapsed = Date.now() - started;
+
+    assert.equal(created.employee.employee_no, 'EMP-0002');
+    assert.ok(elapsed >= 1_000, `waited for the competing writer (${elapsed}ms)`);
+
+    await new Promise((resolve) => helper.once('exit', resolve));
+    helper = null;
+
+    const numbers = db
+      .prepare('SELECT employee_no, full_name FROM employees ORDER BY employee_no')
+      .all()
+      .map((row) => ({ ...row }));
+    assert.deepEqual(numbers, [
+      { employee_no: 'EMP-0001', full_name: 'Held Writer' },
+      { employee_no: 'EMP-0002', full_name: 'Race Winner' },
+    ]);
+  } finally {
+    db.close();
+    if (helper) helper.kill('SIGKILL');
+    fs.rmSync(workDir, { recursive: true, force: true });
+  }
+});
+
+test('two processes creating employees at once keep the numbering gap-free', async () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hris-concurrency-'));
+  const dbFile = path.join(workDir, 'hris.db');
+  const first = await startServer(dbFile);
+  const second = await startServer(dbFile);
+  const total = 24;
+  try {
+    const results = await Promise.all(
+      Array.from({ length: total }, (_, index) =>
+        call(index % 2 === 0 ? first.port : second.port, 'POST', '/api/employees', {
+          full_name: `Employee ${index + 1}`,
+          join_date: '2026-11-02',
+        }),
+      ),
+    );
+
+    assert.equal(results.filter((r) => r.status === 201).length, total);
+    const numbers = results.map((r) => r.data.employee.employee_no).sort();
+    assert.deepEqual(
+      numbers,
+      Array.from({ length: total }, (_, index) => `EMP-${String(index + 1).padStart(4, '0')}`),
+    );
+    assert.equal(new Set(results.map((r) => r.data.employee.full_name)).size, total);
+
+    const next = await call(first.port, 'POST', '/api/employees', {
+      full_name: 'Next Hire',
+      join_date: '2026-11-02',
+    });
+    assert.equal(next.status, 201);
+    assert.equal(next.data.employee.employee_no, `EMP-${String(total + 1).padStart(4, '0')}`);
   } finally {
     await stop(first);
     await stop(second);
