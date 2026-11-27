@@ -10,6 +10,9 @@ services:
       HRIS_DB: /data/hris.db
     volumes:
       - hris-data:/data
+    # Longer than SHUTDOWN_GRACE_MS so the app finishes draining before Docker
+    # escalates to SIGKILL.
+    stop_grace_period: 20s
     restart: unless-stopped
 
 volumes:

@@ -16,6 +16,10 @@ import {
 
 export const db = openDb(process.env.HRIS_DB || 'data/hris.db');
 
+// Set once a shutdown signal arrives, so a second signal cannot start a second
+// drain.
+let shuttingDown = false;
+
 const currentPeriod = () => new Date().toISOString().slice(0, 7);
 
 async function readBody(req) {
@@ -359,6 +363,47 @@ export const server = http.createServer((req, res) => {
   });
 });
 
+const SHUTDOWN_GRACE_MS = Number(process.env.SHUTDOWN_GRACE_MS || 10_000);
+
+function finishShutdown(code) {
+  try {
+    db.close();
+  } catch {
+    // Already closed, or the database never opened: nothing left to flush.
+  }
+  process.exit(code);
+}
+
+/**
+ * Stop accepting connections, let in-flight requests finish, then exit. Idle
+ * keep-alive sockets are closed immediately so they cannot hold the process
+ * open; anything still running when the grace period expires is cut off.
+ */
+function shutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`${signal} received — draining in-flight requests (grace ${SHUTDOWN_GRACE_MS}ms)`);
+
+  const force = setTimeout(() => {
+    console.error('grace period expired — closing remaining connections');
+    server.closeAllConnections();
+    finishShutdown(1);
+  }, SHUTDOWN_GRACE_MS);
+  force.unref();
+
+  server.close((error) => {
+    clearTimeout(force);
+    if (error) {
+      console.error(error);
+      return finishShutdown(1);
+    }
+    console.log('shutdown complete');
+    finishShutdown(0);
+  });
+
+  server.closeIdleConnections();
+}
+
 if (process.env.HRIS_NO_LISTEN !== '1') {
   const port = Number(process.env.PORT || 3000);
   const host = process.env.HOST || '127.0.0.1';
@@ -366,4 +411,6 @@ if (process.env.HRIS_NO_LISTEN !== '1') {
     console.log(`Yuki Tera Workforce demo running at http://${host}:${port}`);
     console.log(`Database: ${process.env.HRIS_DB || 'data/hris.db'}`);
   });
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
 }

@@ -48,6 +48,15 @@ HOST=0.0.0.0 PORT=3000 HRIS_DB=/var/lib/hris/hris.db npm start
 `HRIS_DB` on a persistent disk — the database is the only state. `/health` is the
 readiness probe and the image already declares it as its health check.
 
+### Shutdown
+
+On `SIGTERM` or `SIGINT` the app stops accepting connections, lets in-flight
+requests finish, closes the database and exits `0` — so a restart or redeploy
+does not drop a payroll request mid-write. `SHUTDOWN_GRACE_MS` (default `10000`)
+bounds the wait; after it the remaining connections are cut and the process
+exits `1`. Compose sets `stop_grace_period: 20s` so Docker's `SIGKILL` escalation
+stays behind that grace period.
+
 **This app has no authentication and speaks plain HTTP.** Put TLS and the hostname
 in front of it, and do not expose the port directly to the internet.
 
