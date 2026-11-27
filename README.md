@@ -60,6 +60,34 @@ stays behind that grace period.
 **This app has no authentication and speaks plain HTTP.** Put TLS and the hostname
 in front of it, and do not expose the port directly to the internet.
 
+## Backup and restore
+
+The database is the only state, and it runs in WAL mode — so do not `cp` the
+file while the app is serving. `scripts/db.mjs` snapshots with `VACUUM INTO`
+(consistent even with requests in flight) and checks `integrity_check` plus row
+counts on both sides.
+
+```bash
+npm run backup                                     # backups/hris-<timestamp>.db
+npm run backup -- --out backups/before-restore.db
+npm run restore -- --from backups/hris-2026-11-27T23-50-00-000Z.db --force
+```
+
+Restore replaces the database file and deletes any `-wal`/`-shm` left by the
+database it replaced, so stale pages cannot be replayed. Stop the app first.
+Without `--force` it refuses to overwrite an existing database, and backup
+refuses to overwrite an existing file.
+
+Inside the container the scripts ship with the app and the database is on
+`/data`:
+
+```bash
+docker compose exec hris node scripts/db.mjs backup --out /data/backups/pre-deploy.db
+docker compose cp hris:/data/backups/pre-deploy.db ./pre-deploy.db
+docker compose stop hris
+docker compose run --rm hris node scripts/db.mjs restore --from /data/backups/pre-deploy.db --force
+```
+
 ## The demo flow
 
 1. **Employees → New employee.** The employee number is generated (`EMP-0001`,
@@ -163,6 +191,7 @@ src/db.js        SQLite schema
 src/store.js     validation, contracts, attendance, payroll runs
 src/views.js     server-rendered pages
 src/server.js    HTTP routing (JSON API + HTML forms)
+scripts/db.mjs   backup and restore of the SQLite database
 test/            unit and end-to-end tests
 Dockerfile       image for any Node 24 host
 docker-compose.yml  one-command run with a persistent data volume

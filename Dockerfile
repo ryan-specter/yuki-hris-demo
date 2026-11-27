@@ -11,6 +11,7 @@ WORKDIR /app
 
 COPY package.json ./
 COPY src ./src
+COPY scripts ./scripts
 
 # /data holds the SQLite database, so it must survive the container.
 RUN mkdir -p /data && chown node:node /data

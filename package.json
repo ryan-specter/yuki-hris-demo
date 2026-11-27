@@ -10,6 +10,8 @@
   },
   "scripts": {
     "start": "node src/server.js",
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "backup": "node scripts/db.mjs backup",
+    "restore": "node scripts/db.mjs restore"
   }
 }
