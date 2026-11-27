@@ -78,6 +78,55 @@ database it replaced, so stale pages cannot be replayed. Stop the app first.
 Without `--force` it refuses to overwrite an existing database, and backup
 refuses to overwrite an existing file.
 
+### Scheduled backup and check
+
+`check` inspects the newest snapshot in the backup directory: it must be
+readable, pass `integrity_check`, contain the payroll schema, and be no older
+than `--max-age-hours` (or `BACKUP_MAX_AGE_HOURS`, default `26`). It exits `1`
+and prints the reason to stderr when the backup is missing, stale or corrupt, so
+a scheduler surfaces the failure instead of letting backups rot silently.
+
+```bash
+npm run backup && npm run check-backup
+npm run check-backup -- --dir /srv/hris/backups --max-age-hours 26
+```
+
+Daily cron — back up, then fail the job if the result is unusable:
+
+```cron
+17 3 * * * cd /srv/hris && node scripts/db.mjs backup --out "backups/hris-$(date +\%F).db" && node scripts/db.mjs check
+```
+
+Or a systemd timer:
+
+```ini
+# /etc/systemd/system/hris-backup.service
+[Unit]
+Description=Yuki HRIS backup and freshness check
+
+[Service]
+Type=oneshot
+WorkingDirectory=/srv/hris
+ExecStart=/usr/bin/node scripts/db.mjs backup
+ExecStart=/usr/bin/node scripts/db.mjs check
+```
+
+```ini
+# /etc/systemd/system/hris-backup.timer
+[Unit]
+Description=Daily Yuki HRIS backup
+
+[Timer]
+OnCalendar=*-*-* 03:17:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+```
+
+`systemctl enable --now hris-backup.timer`. A failed `ExecStart` leaves the unit
+failed, which is what `systemctl --failed` and your alerting pick up.
+
 Inside the container the scripts ship with the app and the database is on
 `/data`:
 

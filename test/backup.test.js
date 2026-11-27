@@ -83,6 +83,63 @@ test('a backup restores a completed payroll run exactly', () => {
   }
 });
 
+test('check passes on a fresh backup and fails once it is stale', () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hris-backup-'));
+  try {
+    const dbFile = path.join(workDir, 'hris.db');
+    const backupDir = path.join(workDir, 'backups');
+    const backupFile = path.join(backupDir, 'snapshot.db');
+    seedCompletedPayroll(dbFile);
+    runScript(['backup', '--db', dbFile, '--out', backupFile]);
+
+    const fresh = runScript(['check', '--dir', backupDir, '--max-age-hours', '26']);
+    assert.match(fresh, /backup check: OK/);
+    assert.match(fresh, /payroll_runs 1/);
+
+    // Age the snapshot past the limit without touching its contents.
+    const old = (Date.now() - 30 * 3_600_000) / 1000;
+    fs.utimesSync(backupFile, old, old);
+
+    const stale = spawnSync(
+      process.execPath,
+      ['scripts/db.mjs', 'check', '--dir', backupDir, '--max-age-hours', '26'],
+      { cwd: root, encoding: 'utf8' },
+    );
+    assert.equal(stale.status, 1);
+    assert.match(stale.stdout, /backup check: FAILED/);
+    assert.match(stale.stderr, /is stale \(30\.0h, limit 26h\)/);
+  } finally {
+    fs.rmSync(workDir, { recursive: true, force: true });
+  }
+});
+
+test('check fails loudly on a corrupt newest snapshot or a missing directory', () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hris-backup-'));
+  try {
+    const backupDir = path.join(workDir, 'backups');
+    fs.mkdirSync(backupDir);
+    fs.writeFileSync(path.join(backupDir, 'hris-corrupt.db'), 'this is not a database');
+
+    const corrupt = spawnSync(
+      process.execPath,
+      ['scripts/db.mjs', 'check', '--dir', backupDir],
+      { cwd: root, encoding: 'utf8' },
+    );
+    assert.equal(corrupt.status, 1);
+    assert.match(corrupt.stderr, /not a readable payroll database/);
+
+    const missing = spawnSync(
+      process.execPath,
+      ['scripts/db.mjs', 'check', '--dir', path.join(workDir, 'absent')],
+      { cwd: root, encoding: 'utf8' },
+    );
+    assert.equal(missing.status, 1);
+    assert.match(missing.stderr, /backup directory not found/);
+  } finally {
+    fs.rmSync(workDir, { recursive: true, force: true });
+  }
+});
+
 test('restore refuses to overwrite a database or a backup without --force', () => {
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hris-backup-'));
   try {
