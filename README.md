@@ -96,6 +96,10 @@ curl -s localhost:3000/api/payroll/runs -H 'content-type: application/json' -d '
 curl -s -X POST localhost:3000/api/payroll/runs/1/complete
 ```
 
+## License
+
+MIT — see [LICENSE](LICENSE).
+
 ## Layout
 
 ```

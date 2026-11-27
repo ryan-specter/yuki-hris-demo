@@ -2,6 +2,7 @@
   "name": "yuki-hris-demo",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "description": "Demo HRIS: onboard an employee, capture attendance, run payroll, issue payslips.",
   "engines": {
