@@ -127,7 +127,7 @@ export function esc(value) {
 export const rp = (amount) =>
   `Rp ${Number(amount || 0).toLocaleString('id-ID', { maximumFractionDigits: 0 })}`;
 
-export function layout({ title, active = '', body }) {
+export function layout({ title, active = '', body, extraCss = '' }) {
   const link = (href, label, key) =>
     `<a href="${href}"${active === key ? ' class="active"' : ''}>${label}</a>`;
   return `<!doctype html>
@@ -136,7 +136,7 @@ export function layout({ title, active = '', body }) {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(title)} · Yuki Tera Workforce</title>
-<style>${CSS}</style>
+<style>${CSS}${extraCss}</style>
 </head>
 <body>
 <div class="shell">
@@ -482,7 +482,7 @@ export function employeePage({ detail, flash, error, defaultPeriod }) {
               <tbody>${payslips
                 .map(
                   (row) => `<tr>
-                    <td>${esc(row.period)}</td>
+                    <td><a href="/payslips/${row.id}">${esc(row.period)}</a></td>
                     <td class="num">${rp(row.gross)}</td>
                     <td class="num">${rp(row.total_deductions)}</td>
                     <td class="num"><b>${rp(row.net_pay)}</b></td>
@@ -610,7 +610,7 @@ export function runPage({ detail, flash, error }) {
               <tbody>${payslips
                 .map(
                   (row) => `<tr>
-                    <td><a href="/employees/${row.employee_id}">${esc(row.full_name)}</a><div class="muted mono">${esc(row.employee_no)}</div></td>
+                    <td><a href="/employees/${row.employee_id}">${esc(row.full_name)}</a><div class="muted mono">${esc(row.employee_no)}</div><div><a href="/payslips/${row.id}">Payslip →</a></div></td>
                     <td class="num">${rp(row.prorated_base)}</td>
                     <td class="num">${rp(row.allowance)}</td>
                     <td class="num">${rp(row.overtime_pay)}</td>
@@ -625,6 +625,118 @@ export function runPage({ detail, flash, error }) {
             <p class="muted" style="margin:14px 0 0">BPJS column combines Kesehatan 1%, JHT 2% and JP 1% of the prorated base. PPh 21 is the annual progressive tax spread over 12 months.</p>`
           : `<p class="empty">No payslips in this run.</p>`
       }
+    </div>`,
+  });
+}
+
+const PRINT_CSS = `
+@media print {
+  .sidebar, .no-print { display: none !important; }
+  .shell { display: block; }
+  main { padding: 0; max-width: none; }
+  body { background: #fff; }
+  .card { border-color: #cfd4dc; break-inside: avoid; }
+}
+`;
+
+export function payslipPage({ payslip: slip }) {
+  const absentDays = Math.max(
+    0,
+    slip.working_days - slip.present_days - slip.paid_leave_days - slip.unpaid_leave_days,
+  );
+  const unpaidDays = slip.unpaid_leave_days + absentDays;
+  const absenceDeduction = Math.max(0, slip.base_salary - slip.prorated_base);
+  const issued = (slip.completed_at || '').slice(0, 10) || 'draft';
+
+  const line = (label, value, cls = '') =>
+    `<tr><th style="text-transform:none;letter-spacing:0;font-size:13px;color:var(--ink);font-weight:500">${label}</th><td class="num ${cls}">${value}</td></tr>`;
+
+  return layout({
+    title: `Payslip ${slip.period}`,
+    active: 'payroll',
+    extraCss: PRINT_CSS,
+    body: `
+    <div class="topbar no-print" style="align-items:center">
+      <p class="muted" style="margin:0"><a href="/payroll/${slip.run_id}">← Payroll ${esc(slip.period)}</a></p>
+      <button type="button" onclick="window.print()">Print / save PDF</button>
+    </div>
+
+    <div class="card" style="margin-top:14px">
+      <div class="topbar">
+        <div>
+          <h1 style="margin-bottom:2px">Payslip</h1>
+          <p class="muted" style="margin:0">Yuki Tera Workforce · period ${esc(slip.period)}</p>
+        </div>
+        <span class="pill ${slip.run_status === 'completed' ? 'ok' : 'draft'}">${esc(slip.run_status)}</span>
+      </div>
+
+      <hr>
+
+      <div class="grid cols-2">
+        <div>
+          <h3>Employee</h3>
+          <dl class="kv">
+            <dt>Name</dt><dd>${esc(slip.full_name)}</dd>
+            <dt>Employee no.</dt><dd class="mono">${esc(slip.employee_no)}</dd>
+            <dt>Position</dt><dd>${esc(slip.position || '—')}</dd>
+            <dt>Department</dt><dd>${esc(slip.department || '—')}</dd>
+            <dt>PTKP status</dt><dd>${esc(slip.ptkp_status)}</dd>
+            <dt>Paid to</dt><dd>${esc(slip.bank_account || '—')}</dd>
+          </dl>
+        </div>
+        <div>
+          <h3>Attendance</h3>
+          <dl class="kv">
+            <dt>Working days</dt><dd>${slip.working_days}</dd>
+            <dt>Present</dt><dd>${slip.present_days}</dd>
+            <dt>Paid leave</dt><dd>${slip.paid_leave_days}</dd>
+            <dt>Unpaid days</dt><dd>${unpaidDays}${absentDays ? ` (${absentDays} absent)` : ''}</dd>
+            <dt>Overtime</dt><dd>${slip.overtime_hours} h</dd>
+          </dl>
+        </div>
+      </div>
+
+      <hr>
+
+      <div class="grid cols-2">
+        <div>
+          <h3>Earnings</h3>
+          <table>
+            <tbody>
+              ${line('Base salary', rp(slip.base_salary))}
+              ${absenceDeduction ? line(`Absence deduction (${unpaidDays} day${unpaidDays === 1 ? '' : 's'})`, `−${rp(absenceDeduction)}`) : ''}
+              ${line('Fixed allowance', rp(slip.allowance))}
+              ${line(`Overtime (${slip.overtime_hours} h × 1.5)`, slip.overtime_pay ? rp(slip.overtime_pay) : '—')}
+              ${line('<b>Gross earnings</b>', rp(slip.gross))}
+            </tbody>
+          </table>
+        </div>
+        <div>
+          <h3>Deductions</h3>
+          <table>
+            <tbody>
+              ${line('BPJS Kesehatan (1%)', rp(slip.bpjs_kesehatan))}
+              ${line('BPJS JHT (2%)', rp(slip.bpjs_jht))}
+              ${line('BPJS JP (1%)', rp(slip.bpjs_jp))}
+              ${line('PPh 21', rp(slip.pph21))}
+              ${slip.other_deduction ? line('Other deduction', rp(slip.other_deduction)) : ''}
+              ${line('<b>Total deductions</b>', rp(slip.total_deductions))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card" style="margin:0;background:#f9fafb;display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap">
+        <div>
+          <div class="muted" style="font-size:12px;text-transform:uppercase;letter-spacing:.06em">Take-home pay</div>
+          <div style="font-size:13px" class="muted">${slip.working_days} working days · ${unpaidDays} unpaid</div>
+        </div>
+        <div style="font-size:26px;font-weight:700;letter-spacing:-0.02em">${rp(slip.net_pay)}</div>
+      </div>
+
+      <p class="muted" style="margin:16px 0 0;font-size:12px">
+        Demo payslip · run #${slip.run_id} · issued ${esc(issued)} · not a tax invoice.
+      </p>
     </div>`,
   });
 }

@@ -208,9 +208,36 @@ test('the rendered pages expose the demo flow', async () => {
   const run = await call('GET', '/payroll/1');
   assert.equal(run.status, 200);
   assert.match(run.text, /Payroll completed/);
+  assert.match(run.text, /\/payslips\/\d+/);
 
   const missing = await call('GET', '/employees/999');
   assert.equal(missing.status, 404);
+});
+
+test('a payslip has API and printable pages', async () => {
+  const api = await call('GET', '/api/payslips/1');
+  assert.equal(api.status, 200);
+  assert.equal(api.data.payslip.employee_no, 'EMP-0001');
+  assert.equal(api.data.payslip.period, '2026-11');
+  assert.equal(api.data.payslip.run_status, 'completed');
+  assert.equal(api.data.payslip.net_pay, 8_672_500);
+  assert.equal(api.data.payslip.bpjs_kesehatan + api.data.payslip.bpjs_jht + api.data.payslip.bpjs_jp, 340_000);
+
+  const page = await call('GET', '/payslips/1');
+  assert.equal(page.status, 200);
+  assert.match(page.text, /Payslip/);
+  assert.match(page.text, /Ayu Prameswari/);
+  assert.match(page.text, /EMP-0001/);
+  assert.match(page.text, /Rp 8\.672\.500/);
+  assert.match(page.text, /Take-home pay/);
+  assert.match(page.text, /@media print/);
+  assert.match(page.text, /Print \/ save PDF/);
+
+  const missingApi = await call('GET', '/api/payslips/999');
+  assert.equal(missingApi.status, 404);
+
+  const missingPage = await call('GET', '/payslips/999');
+  assert.equal(missingPage.status, 404);
 });
 
 test('the HTML form flow creates an employee and redirects', async () => {

@@ -75,6 +75,10 @@ withholding table.
 | `POST` | `/api/payroll/runs` | create a draft run for `{ period }` |
 | `GET` | `/api/payroll/runs/:id` | run with payslips |
 | `POST` | `/api/payroll/runs/:id/complete` | lock the run and issue payslips |
+| `GET` | `/api/payslips/:id` | one payslip with employee and run details |
+
+Each payslip also has a printable page at `/payslips/:id` (Print / save PDF hides
+the navigation), linked from the run and the employee page.
 
 Example:
 

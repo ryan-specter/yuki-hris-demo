@@ -369,6 +369,24 @@ export function completeRun(db, runId) {
   return runDetail(db, detail.run.id);
 }
 
+export function payslipDetail(db, payslipId) {
+  return (
+    db
+      .prepare(
+        `SELECT p.*, e.full_name AS full_name, e.employee_no AS employee_no,
+                e.position AS position, e.department AS department,
+                e.ptkp_status AS ptkp_status, e.bank_account AS bank_account,
+                e.join_date AS join_date,
+                r.period AS period, r.status AS run_status, r.completed_at AS completed_at
+           FROM payslips p
+           JOIN employees e ON e.id = p.employee_id
+           JOIN payroll_runs r ON r.id = p.run_id
+          WHERE p.id = ?`,
+      )
+      .get(payslipId) ?? null
+  );
+}
+
 /* -------------------------------------------------------------------- stats */
 
 export function stats(db) {

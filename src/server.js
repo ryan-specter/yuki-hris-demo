@@ -9,6 +9,7 @@ import {
   employeesPage,
   errorPage,
   payrollPage,
+  payslipPage,
   runPage,
 } from './views.js';
 
@@ -140,6 +141,13 @@ async function handle(req, res) {
       return sendJson(res, 200, detail);
     }
 
+    match = path.match(/^\/api\/payslips\/(\d+)$/);
+    if (method === 'GET' && match) {
+      const payslip = store.payslipDetail(db, Number(match[1]));
+      if (!payslip) throw new HttpError(404, 'payslip not found');
+      return sendJson(res, 200, { payslip });
+    }
+
     /* ------------------------------------------------------------ api: 404 */
     if (isApi) throw new HttpError(404, 'route not found');
 
@@ -208,6 +216,13 @@ async function handle(req, res) {
         if (!(error instanceof HttpError)) throw error;
         return redirect(res, `/employees/${id}?error=${encodeURIComponent(error.message)}`);
       }
+    }
+
+    match = path.match(/^\/payslips\/(\d+)$/);
+    if (method === 'GET' && match) {
+      const payslip = store.payslipDetail(db, Number(match[1]));
+      if (!payslip) throw new HttpError(404, 'payslip not found');
+      return html(200, payslipPage({ payslip }));
     }
 
     if (method === 'GET' && path === '/payroll') {
