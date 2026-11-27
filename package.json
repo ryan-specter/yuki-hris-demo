@@ -13,6 +13,7 @@
     "test": "node --test test/*.test.js",
     "backup": "node scripts/db.mjs backup",
     "restore": "node scripts/db.mjs restore",
-    "check-backup": "node scripts/db.mjs check"
+    "check-backup": "node scripts/db.mjs check",
+    "prune-backups": "node scripts/db.mjs prune"
   }
 }

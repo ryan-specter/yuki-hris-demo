@@ -140,6 +140,85 @@ test('check fails loudly on a corrupt newest snapshot or a missing directory', (
   }
 });
 
+function snapshotInto(dbFile, dir, name, ageHours) {
+  const target = path.join(dir, name);
+  runScript(['backup', '--db', dbFile, '--out', target]);
+  const when = (Date.now() - ageHours * 3_600_000) / 1000;
+  fs.utimesSync(target, when, when);
+  return target;
+}
+
+test('prune keeps the newest snapshots and leaves other files alone', () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hris-backup-'));
+  try {
+    const dbFile = path.join(workDir, 'hris.db');
+    const backupDir = path.join(workDir, 'backups');
+    fs.mkdirSync(backupDir);
+    seedCompletedPayroll(dbFile);
+
+    const files = [1, 2, 3, 4, 5].map((index) =>
+      snapshotInto(dbFile, backupDir, `hris-0${index}.db`, 6 - index),
+    );
+    // A custom --out name and a non-database file must survive retention.
+    const custom = snapshotInto(dbFile, backupDir, 'keep-me.db', 24);
+    const notes = path.join(backupDir, 'hris-notes.txt');
+    fs.writeFileSync(notes, 'not a snapshot');
+
+    const out = runScript(['prune', '--dir', backupDir, '--keep', '2']);
+    assert.match(out, /deleted 3 old snapshot/);
+
+    assert.deepEqual(
+      files.map((file) => fs.existsSync(file)),
+      [false, false, false, true, true],
+    );
+    assert.ok(fs.existsSync(custom), 'custom-named backup kept');
+    assert.ok(fs.existsSync(notes), 'unrelated file kept');
+  } finally {
+    fs.rmSync(workDir, { recursive: true, force: true });
+  }
+});
+
+test('prune deletes nothing until a newer snapshot verifies', () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hris-backup-'));
+  try {
+    const dbFile = path.join(workDir, 'hris.db');
+    const backupDir = path.join(workDir, 'backups');
+    fs.mkdirSync(backupDir);
+    seedCompletedPayroll(dbFile);
+
+    const old = snapshotInto(dbFile, backupDir, 'hris-old.db', 4);
+    const corrupt = path.join(backupDir, 'hris-new.db');
+    fs.writeFileSync(corrupt, 'this is not a database');
+    const twoHoursAgo = (Date.now() - 2 * 3_600_000) / 1000;
+    fs.utimesSync(corrupt, twoHoursAgo, twoHoursAgo);
+
+    const refused = spawnSync(
+      process.execPath,
+      ['scripts/db.mjs', 'prune', '--dir', backupDir, '--keep', '1'],
+      { cwd: root, encoding: 'utf8' },
+    );
+    assert.equal(refused.status, 1);
+    assert.match(refused.stderr, /refusing to prune/);
+    assert.ok(fs.existsSync(old), 'older snapshot kept when newest is unreadable');
+    assert.ok(fs.existsSync(corrupt), 'corrupt newest left in place for inspection');
+
+    // With a verified newer snapshot the same prune is allowed.
+    const valid = snapshotInto(dbFile, backupDir, 'hris-valid.db', 0);
+    const dryRun = runScript(['prune', '--dir', backupDir, '--keep', '1', '--dry-run']);
+    assert.match(dryRun, /would delete 2 of 3/);
+    assert.ok(fs.existsSync(old));
+    assert.ok(fs.existsSync(corrupt));
+
+    const real = runScript(['prune', '--dir', backupDir, '--keep', '1']);
+    assert.match(real, /deleted 2 old snapshot/);
+    assert.ok(fs.existsSync(valid));
+    assert.ok(!fs.existsSync(old));
+    assert.ok(!fs.existsSync(corrupt));
+  } finally {
+    fs.rmSync(workDir, { recursive: true, force: true });
+  }
+});
+
 test('restore refuses to overwrite a database or a backup without --force', () => {
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hris-backup-'));
   try {

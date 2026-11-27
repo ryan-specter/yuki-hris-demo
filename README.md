@@ -103,10 +103,24 @@ npm run backup && npm run check-backup
 npm run check-backup -- --dir /srv/hris/backups --max-age-hours 26
 ```
 
+### Retention
+
+`prune` keeps the newest `--keep` snapshots (`BACKUP_KEEP`, default `7`) and
+deletes older ones — but only after the newest snapshot passes the same
+verification as `check`. If it is unreadable or corrupt, nothing is deleted and
+the command exits `1`, so retention can never run ahead of a good backup. Only
+files named `hris-*.db` are candidates: a backup written with `--out my.db` is
+never removed. Use `--dry-run` to see the list first.
+
+```bash
+npm run prune-backups -- --dry-run
+npm run prune-backups -- --keep 30
+```
+
 Daily cron — back up, then fail the job if the result is unusable:
 
 ```cron
-17 3 * * * cd /srv/hris && node scripts/db.mjs backup --out "backups/hris-$(date +\%F).db" && node scripts/db.mjs check
+17 3 * * * cd /srv/hris && node scripts/db.mjs backup --out "backups/hris-$(date +\%F).db" && node scripts/db.mjs check && node scripts/db.mjs prune
 ```
 
 Or a systemd timer:
@@ -121,6 +135,7 @@ Type=oneshot
 WorkingDirectory=/srv/hris
 ExecStart=/usr/bin/node scripts/db.mjs backup
 ExecStart=/usr/bin/node scripts/db.mjs check
+ExecStart=/usr/bin/node scripts/db.mjs prune
 ```
 
 ```ini

@@ -13,6 +13,7 @@ const USAGE = `Usage:
   node scripts/db.mjs backup  [--db <database>] [--out <file>] [--force]
   node scripts/db.mjs restore --from <backup> [--db <database>] [--force]
   node scripts/db.mjs check   [--dir <directory>] [--max-age-hours <hours>]
+  node scripts/db.mjs prune   [--dir <directory>] [--keep <count>] [--dry-run]
 
 backup   Snapshot the database (default: $HRIS_DB or data/hris.db) to
          backups/hris-<timestamp>.db. Safe while the app is running.
@@ -21,7 +22,11 @@ restore  Replace the database with a backup. Stop the app first; --force
 check    Verify the newest backup in the directory: readable, integrity ok,
          payroll schema present, and no older than --max-age-hours (or
          $BACKUP_MAX_AGE_HOURS; default 26). Exits 1 when it is missing, stale
-         or corrupt, so a scheduler alerts instead of failing silently.`;
+         or corrupt, so a scheduler alerts instead of failing silently.
+prune    Delete old snapshots, keeping the newest --keep (or $BACKUP_KEEP;
+         default 7). Only files named hris-*.db are considered, so --out names
+         are never deleted, and nothing is removed unless the newest snapshot
+         passes verification. --dry-run prints what would go.`;
 
 function fail(message) {
   console.error(`error: ${message}`);
@@ -38,6 +43,8 @@ function parseArgs(argv) {
     else if (arg === '--from') options.from = rest[++index];
     else if (arg === '--dir') options.dir = rest[++index];
     else if (arg === '--max-age-hours') options.maxAgeHours = rest[++index];
+    else if (arg === '--keep') options.keep = rest[++index];
+    else if (arg === '--dry-run') options.dryRun = true;
     else if (arg === '--force') options.force = true;
     else if (arg === '-h' || arg === '--help') options.help = true;
     else fail(`unknown argument: ${arg}\n\n${USAGE}`);
@@ -199,6 +206,72 @@ function check(options) {
   }
 }
 
+function prune(options) {
+  const dir = path.resolve(options.dir ?? 'backups');
+  if (!fs.existsSync(dir)) fail(`backup directory not found: ${dir}`);
+
+  const rawKeep = options.keep ?? process.env.BACKUP_KEEP ?? '7';
+  const keep = Number(rawKeep);
+  if (!Number.isInteger(keep) || keep < 1) {
+    fail(`--keep must be a whole number of snapshots to keep (at least 1), got ${rawKeep}`);
+  }
+
+  // Only names this tool creates are candidates; a user-chosen --out file is
+  // never deleted by retention.
+  const snapshots = fs
+    .readdirSync(dir)
+    .filter(
+      (name) =>
+        name.startsWith('hris-') &&
+        name.endsWith('.db') &&
+        !name.includes('.tmp-') &&
+        !name.includes('.restore-'),
+    )
+    .map((name) => {
+      const file = path.join(dir, name);
+      return { file, mtime: fs.statSync(file).mtimeMs };
+    })
+    .sort((a, b) => b.mtime - a.mtime);
+
+  if (!snapshots.length) {
+    console.log(`prune: no hris-*.db snapshots in ${dir}, nothing to do`);
+    return;
+  }
+
+  // Deleting history is only safe behind a snapshot that is known good.
+  const newest = snapshots[0];
+  let info;
+  try {
+    info = inspect(newest.file);
+  } catch (error) {
+    fail(`newest snapshot is unreadable, refusing to prune: ${newest.file} (${error.message})`);
+  }
+  if (info.status !== 'ok') {
+    fail(`newest snapshot failed integrity_check (${info.status}), refusing to prune: ${newest.file}`);
+  }
+
+  const doomed = snapshots.slice(keep);
+  if (!doomed.length) {
+    console.log(`prune: nothing to do — ${snapshots.length} snapshot(s), keeping ${keep}`);
+    console.log(`newest: ${newest.file}`);
+    console.log(describe(info));
+    return;
+  }
+
+  if (options.dryRun) {
+    console.log(`prune: dry run — would delete ${doomed.length} of ${snapshots.length} snapshot(s)`);
+    for (const item of doomed) console.log(`  would delete ${item.file}`);
+    return;
+  }
+
+  for (const item of doomed) fs.rmSync(item.file, { force: true });
+
+  console.log(`prune: deleted ${doomed.length} old snapshot(s), kept the newest ${keep}`);
+  for (const item of doomed) console.log(`  deleted ${item.file}`);
+  console.log(`newest: ${newest.file}`);
+  console.log(describe(info));
+}
+
 const options = parseArgs(process.argv.slice(2));
 if (options.help || !options.command) {
   console.log(USAGE);
@@ -207,4 +280,5 @@ if (options.help || !options.command) {
 if (options.command === 'backup') backup(options);
 else if (options.command === 'restore') restore(options);
 else if (options.command === 'check') check(options);
+else if (options.command === 'prune') prune(options);
 else fail(`unknown command: ${options.command}\n\n${USAGE}`);
