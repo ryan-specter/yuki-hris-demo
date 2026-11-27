@@ -3,7 +3,9 @@ import test from 'node:test';
 import {
   PTKP_STATUSES,
   annualIncomeTax,
+  completedServiceMonths,
   computePayslip,
+  computeThr,
   monthlyIncomeTax,
 } from '../src/payroll.js';
 
@@ -128,6 +130,72 @@ test('a month with no paid days produces no earnings and no deductions', () => {
   assert.equal(slip.gross, 0);
   assert.equal(slip.totalDeductions, 0);
   assert.equal(slip.netPay, 0);
+});
+
+test('service months count only complete months', () => {
+  assert.equal(completedServiceMonths('2026-01-01', '2027-01'), 12);
+  assert.equal(completedServiceMonths('2026-01-10', '2027-01'), 11);
+  assert.equal(completedServiceMonths('2026-11-02', '2027-01'), 1);
+  assert.equal(completedServiceMonths('2027-01-05', '2027-01'), 0);
+});
+
+test('THR is prorated by service and capped at one month', () => {
+  assert.deepEqual(
+    computeThr({ baseSalary: 6_000_000, joinDate: '2027-01-05', period: '2027-01' }),
+    { months: 0, amount: 0 },
+  );
+  assert.equal(
+    computeThr({ baseSalary: 6_000_000, joinDate: '2026-01-10', period: '2027-01' }).amount,
+    5_500_000,
+  );
+  assert.equal(
+    computeThr({ baseSalary: 6_000_000, allowance: 600_000, joinDate: '2026-01-01', period: '2027-01' })
+      .amount,
+    6_600_000,
+  );
+  assert.equal(
+    computeThr({ baseSalary: 6_000_000, joinDate: '2020-01-01', period: '2027-01' }).amount,
+    6_000_000,
+  );
+});
+
+test('THR raises gross and PPh 21 but not the BPJS base', () => {
+  const without = computePayslip({ baseSalary: 6_000_000, attendance: fullMonth() });
+  const withThr = computePayslip({
+    baseSalary: 6_000_000,
+    attendance: fullMonth(),
+    thrAmount: 6_000_000,
+  });
+
+  assert.equal(withThr.gross, 12_000_000);
+  assert.equal(withThr.bpjsKesehatan, without.bpjsKesehatan);
+  assert.equal(withThr.bpjsJht, without.bpjsJht);
+  assert.equal(withThr.pph21, 625_000);
+  assert.equal(withThr.netPay, 11_135_000);
+  assert.equal(withThr.netPay, withThr.gross - withThr.totalDeductions);
+});
+
+test('employer BPJS contributions use their own rates and caps', () => {
+  const slip = computePayslip({ baseSalary: 11_000_000, attendance: fullMonth() });
+
+  assert.equal(slip.employerBpjsKesehatan, 440_000);
+  assert.equal(slip.employerBpjsJht, 407_000);
+  assert.equal(slip.employerBpjsJp, 210_948);
+  assert.equal(slip.employerBpjsJkk, 26_400);
+  assert.equal(slip.employerBpjsJkm, 33_000);
+  assert.equal(slip.employerTotal, 1_117_348);
+  assert.equal(slip.employerCost, slip.gross + slip.employerTotal);
+  // employer contributions never change take-home pay
+  assert.equal(slip.netPay, slip.gross - slip.totalDeductions);
+});
+
+test('employer contributions follow the prorated base', () => {
+  const full = computePayslip({ baseSalary: 11_000_000, attendance: fullMonth() });
+  const reduced = computePayslip({ baseSalary: 11_000_000, attendance: fullMonth({ presentDays: 20 }) });
+
+  assert.ok(reduced.employerTotal < full.employerTotal);
+  assert.equal(reduced.employerBpjsKesehatan, 400_000);
+  assert.equal(reduced.employerBpjsJht, 370_000);
 });
 
 test('PTKP table is complete for the statuses offered in the UI', () => {

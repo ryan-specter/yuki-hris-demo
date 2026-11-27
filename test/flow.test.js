@@ -240,6 +240,66 @@ test('a payslip has API and printable pages', async () => {
   assert.equal(missingPage.status, 404);
 });
 
+test('THR and employer contributions are included when requested', async () => {
+  const hired = await call('POST', '/api/employees', {
+    full_name: 'Citra Halim',
+    join_date: '2026-01-01',
+    ptkp_status: 'TK/0',
+  });
+  assert.equal(hired.status, 201);
+  const employeeId = hired.data.employee.id;
+  const employeeNo = hired.data.employee.employee_no;
+
+  const contract = await call('POST', `/api/employees/${employeeId}/contracts`, {
+    base_salary: 6_000_000,
+    effective_from: '2026-01-01',
+  });
+  assert.equal(contract.status, 201);
+
+  for (const id of [1, 2, employeeId]) {
+    const recorded = await call('PUT', `/api/employees/${id}/attendance`, {
+      period: '2027-01',
+      working_days: 22,
+      present_days: 22,
+    });
+    assert.equal(recorded.status, 200);
+  }
+
+  const created = await call('POST', '/api/payroll/runs', {
+    period: '2027-01',
+    include_thr: true,
+  });
+  assert.equal(created.status, 201);
+
+  const citra = created.data.payslips.find((slip) => slip.employee_no === employeeNo);
+  assert.equal(citra.thr_amount, 6_000_000);
+  assert.equal(citra.gross, 12_000_000);
+  assert.equal(citra.pph21, 625_000);
+  assert.equal(citra.net_pay, 11_135_000);
+  assert.equal(citra.employer_total, 614_400);
+
+  const run = created.data.run;
+  assert.equal(
+    run.total_thr,
+    created.data.payslips.reduce((sum, slip) => sum + slip.thr_amount, 0),
+  );
+  assert.equal(
+    run.total_employer_contribution,
+    created.data.payslips.reduce((sum, slip) => sum + slip.employer_total, 0),
+  );
+  assert.equal(run.total_employer_cost, run.total_gross + run.total_employer_contribution);
+
+  const page = await call('GET', `/payslips/${citra.id}`);
+  assert.equal(page.status, 200);
+  assert.match(page.text, /THR \(holiday allowance\)/);
+  assert.match(page.text, /Employer contributions/);
+  assert.match(page.text, /Rp 11\.135\.000/);
+
+  const runPage = await call('GET', '/payroll/2');
+  assert.equal(runPage.status, 200);
+  assert.match(runPage.text, /Employer cost/);
+});
+
 test('the HTML form flow creates an employee and redirects', async () => {
   const response = await fetch(`${base}/employees`, {
     method: 'POST',

@@ -1,5 +1,5 @@
 import { HttpError } from './errors.js';
-import { PTKP_STATUSES, computePayslip } from './payroll.js';
+import { PTKP_STATUSES, computePayslip, computeThr } from './payroll.js';
 
 const nowIso = () => new Date().toISOString();
 const todayIso = () => new Date().toISOString().slice(0, 10);
@@ -284,42 +284,65 @@ export function createRun(db, input) {
     throw new HttpError(422, `no active employees are payable for ${period}`);
   }
 
-  const computed = prepared.map(({ employee, contract, attendance }) => ({
-    employee,
-    attendance,
-    payslip: computePayslip({
-      baseSalary: contract.base_salary,
-      allowance: contract.allowance,
-      attendance: {
-        workingDays: attendance.working_days,
-        presentDays: attendance.present_days,
-        paidLeaveDays: attendance.paid_leave_days,
-        unpaidLeaveDays: attendance.unpaid_leave_days,
-        overtimeHours: attendance.overtime_hours,
-      },
-      ptkpStatus: employee.ptkp_status,
-    }),
-  }));
+  const includeThr = ['1', 'true', 'on', 'yes'].includes(
+    String(input.include_thr ?? '').toLowerCase(),
+  );
+
+  const computed = prepared.map(({ employee, contract, attendance }) => {
+    const thrAmount = includeThr
+      ? computeThr({
+          baseSalary: contract.base_salary,
+          allowance: contract.allowance,
+          joinDate: employee.join_date,
+          period,
+        }).amount
+      : 0;
+
+    return {
+      employee,
+      attendance,
+      payslip: computePayslip({
+        baseSalary: contract.base_salary,
+        allowance: contract.allowance,
+        attendance: {
+          workingDays: attendance.working_days,
+          presentDays: attendance.present_days,
+          paidLeaveDays: attendance.paid_leave_days,
+          unpaidLeaveDays: attendance.unpaid_leave_days,
+          overtimeHours: attendance.overtime_hours,
+        },
+        ptkpStatus: employee.ptkp_status,
+        thrAmount,
+      }),
+    };
+  });
 
   const totalGross = computed.reduce((sum, row) => sum + row.payslip.gross, 0);
   const totalNet = computed.reduce((sum, row) => sum + row.payslip.netPay, 0);
+  const totalThr = computed.reduce((sum, row) => sum + row.payslip.thrAmount, 0);
+  const totalEmployer = computed.reduce((sum, row) => sum + row.payslip.employerTotal, 0);
+  const totalEmployerCost = totalGross + totalEmployer;
 
   db.exec('BEGIN IMMEDIATE');
   try {
     const info = db
       .prepare(
-        `INSERT INTO payroll_runs (period, status, total_gross, total_net, created_at)
-         VALUES (?, 'draft', ?, ?, ?)`,
+        `INSERT INTO payroll_runs
+           (period, status, total_gross, total_net, total_thr,
+            total_employer_contribution, total_employer_cost, created_at)
+         VALUES (?, 'draft', ?, ?, ?, ?, ?, ?)`,
       )
-      .run(period, totalGross, totalNet, nowIso());
+      .run(period, totalGross, totalNet, totalThr, totalEmployer, totalEmployerCost, nowIso());
     const runId = Number(info.lastInsertRowid);
 
     const insert = db.prepare(
       `INSERT INTO payslips
-         (run_id, employee_id, base_salary, prorated_base, allowance, overtime_pay, gross,
+         (run_id, employee_id, base_salary, prorated_base, allowance, overtime_pay, thr_amount, gross,
           bpjs_kesehatan, bpjs_jht, bpjs_jp, pph21, other_deduction, total_deductions, net_pay,
+          employer_bpjs_kesehatan, employer_bpjs_jht, employer_bpjs_jp,
+          employer_bpjs_jkk, employer_bpjs_jkm, employer_total,
           working_days, present_days, paid_leave_days, unpaid_leave_days, overtime_hours)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
 
     for (const { employee, attendance, payslip } of computed) {
@@ -330,6 +353,7 @@ export function createRun(db, input) {
         payslip.proratedBase,
         payslip.allowance,
         payslip.overtimePay,
+        payslip.thrAmount,
         payslip.gross,
         payslip.bpjsKesehatan,
         payslip.bpjsJht,
@@ -338,6 +362,12 @@ export function createRun(db, input) {
         payslip.otherDeduction,
         payslip.totalDeductions,
         payslip.netPay,
+        payslip.employerBpjsKesehatan,
+        payslip.employerBpjsJht,
+        payslip.employerBpjsJp,
+        payslip.employerBpjsJkk,
+        payslip.employerBpjsJkm,
+        payslip.employerTotal,
         attendance.working_days,
         attendance.present_days,
         attendance.paid_leave_days,

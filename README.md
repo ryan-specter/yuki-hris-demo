@@ -52,14 +52,16 @@ Money is stored as whole rupiah.
 | BPJS JHT (employee) | 2% of prorated base |
 | BPJS JP (employee) | 1% of prorated base, capped at Rp 10,547,400 |
 | PPh 21 | annual progressive tax on (gross × 12 − PTKP) ÷ 12 |
+| THR | one month of base + fixed allowance after 12 months of service, prorated by completed months, zero before the first full month; added to gross but not to the BPJS base |
+| Employer BPJS | Kesehatan 4% (cap Rp 12M), JHT 3.7%, JP 2% (cap Rp 10,547,400), JKK 0.24%, JKM 0.30% of the prorated base — company cost, never deducted |
 | Net pay | gross − all deductions |
 
 PPh 21 brackets: 5% to Rp 60M, 15% to Rp 250M, 25% to Rp 500M, 30% to Rp 5B,
 35% above. PTKP: TK/0 Rp 54M through K/3 Rp 72M.
 
-This is a demo model, not a certified Indonesian payroll engine: it ignores
-employer contributions, THR, BPJS Kesehatan family tiers, and the TER monthly
-withholding table.
+This is a demo model, not a certified Indonesian payroll engine: it ignores BPJS
+Kesehatan family tiers, the TER monthly withholding table, and the calendar rule
+that decides which period actually pays THR (the run simply offers a flag).
 
 ## API
 
@@ -97,6 +99,9 @@ curl -s -X PUT localhost:3000/api/employees/1/attendance -H 'content-type: appli
 }'
 
 curl -s localhost:3000/api/payroll/runs -H 'content-type: application/json' -d '{"period":"2026-11"}'
+
+# include THR for employees with completed months of service
+curl -s localhost:3000/api/payroll/runs -H 'content-type: application/json' -d '{"period":"2027-01","include_thr":true}'
 curl -s -X POST localhost:3000/api/payroll/runs/1/complete
 ```
 

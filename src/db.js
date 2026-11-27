@@ -48,6 +48,9 @@ CREATE TABLE IF NOT EXISTS payroll_runs (
   status       TEXT NOT NULL DEFAULT 'draft',
   total_gross  INTEGER NOT NULL DEFAULT 0,
   total_net    INTEGER NOT NULL DEFAULT 0,
+  total_thr    INTEGER NOT NULL DEFAULT 0,
+  total_employer_contribution INTEGER NOT NULL DEFAULT 0,
+  total_employer_cost         INTEGER NOT NULL DEFAULT 0,
   created_at   TEXT NOT NULL,
   completed_at TEXT
 );
@@ -60,6 +63,7 @@ CREATE TABLE IF NOT EXISTS payslips (
   prorated_base     INTEGER NOT NULL,
   allowance         INTEGER NOT NULL,
   overtime_pay      INTEGER NOT NULL,
+  thr_amount        INTEGER NOT NULL DEFAULT 0,
   gross             INTEGER NOT NULL,
   bpjs_kesehatan    INTEGER NOT NULL,
   bpjs_jht          INTEGER NOT NULL,
@@ -68,6 +72,12 @@ CREATE TABLE IF NOT EXISTS payslips (
   other_deduction   INTEGER NOT NULL DEFAULT 0,
   total_deductions  INTEGER NOT NULL,
   net_pay           INTEGER NOT NULL,
+  employer_bpjs_kesehatan INTEGER NOT NULL DEFAULT 0,
+  employer_bpjs_jht       INTEGER NOT NULL DEFAULT 0,
+  employer_bpjs_jp        INTEGER NOT NULL DEFAULT 0,
+  employer_bpjs_jkk       INTEGER NOT NULL DEFAULT 0,
+  employer_bpjs_jkm       INTEGER NOT NULL DEFAULT 0,
+  employer_total          INTEGER NOT NULL DEFAULT 0,
   working_days      INTEGER NOT NULL,
   present_days      INTEGER NOT NULL,
   paid_leave_days   INTEGER NOT NULL,
@@ -78,6 +88,27 @@ CREATE TABLE IF NOT EXISTS payslips (
 CREATE INDEX IF NOT EXISTS idx_payslips_run ON payslips(run_id);
 `;
 
+function ensureColumn(db, table, column, definition) {
+  const columns = db.prepare(`PRAGMA table_info(${table})`).all();
+  if (!columns.some((entry) => entry.name === column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
+}
+
+// Databases created before THR and employer contributions need the new columns.
+function migrate(db) {
+  ensureColumn(db, 'payslips', 'thr_amount', 'INTEGER NOT NULL DEFAULT 0');
+  ensureColumn(db, 'payslips', 'employer_bpjs_kesehatan', 'INTEGER NOT NULL DEFAULT 0');
+  ensureColumn(db, 'payslips', 'employer_bpjs_jht', 'INTEGER NOT NULL DEFAULT 0');
+  ensureColumn(db, 'payslips', 'employer_bpjs_jp', 'INTEGER NOT NULL DEFAULT 0');
+  ensureColumn(db, 'payslips', 'employer_bpjs_jkk', 'INTEGER NOT NULL DEFAULT 0');
+  ensureColumn(db, 'payslips', 'employer_bpjs_jkm', 'INTEGER NOT NULL DEFAULT 0');
+  ensureColumn(db, 'payslips', 'employer_total', 'INTEGER NOT NULL DEFAULT 0');
+  ensureColumn(db, 'payroll_runs', 'total_thr', 'INTEGER NOT NULL DEFAULT 0');
+  ensureColumn(db, 'payroll_runs', 'total_employer_contribution', 'INTEGER NOT NULL DEFAULT 0');
+  ensureColumn(db, 'payroll_runs', 'total_employer_cost', 'INTEGER NOT NULL DEFAULT 0');
+}
+
 export function openDb(file = ':memory:') {
   if (file !== ':memory:') {
     fs.mkdirSync(path.dirname(path.resolve(file)), { recursive: true });
@@ -86,5 +117,6 @@ export function openDb(file = ':memory:') {
   db.exec('PRAGMA journal_mode = WAL;');
   db.exec('PRAGMA foreign_keys = ON;');
   db.exec(SCHEMA);
+  migrate(db);
   return db;
 }

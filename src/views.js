@@ -537,8 +537,12 @@ export function payrollPage({ runs, employeesReady, flash, error, defaultPeriod 
       ${employeesReady ? '' : '<p class="muted" style="margin-top:-6px">At least one active employee needs a contract and attendance before a run can be created.</p>'}
       <form method="post" action="/payroll/runs" class="actions">
         <input name="period" type="month" value="${esc(defaultPeriod)}" required style="max-width:200px">
+        <label style="display:flex;gap:6px;align-items:center;font-size:13px;color:#344054">
+          <input type="checkbox" name="include_thr" value="1" style="width:auto"> Include THR
+        </label>
         <button type="submit">Create run</button>
       </form>
+      <p class="muted" style="margin:10px 0 0;font-size:12px">THR pays one month of base plus fixed allowance after 12 months of service, prorated by completed months, and is added to gross without changing the BPJS base.</p>
     </div>
 
     <div class="card">
@@ -588,7 +592,9 @@ export function runPage({ detail, flash, error }) {
       <div class="stat"><span>Employees</span><b>${payslips.length}</b></div>
       <div class="stat"><span>Gross</span><b style="font-size:19px">${rp(run.total_gross)}</b></div>
       <div class="stat"><span>Net</span><b style="font-size:19px">${rp(run.total_net)}</b></div>
-      <div class="stat"><span>Deductions</span><b style="font-size:19px">${rp(run.total_gross - run.total_net)}</b></div>
+      <div class="stat"><span>THR</span><b style="font-size:19px">${rp(run.total_thr)}</b></div>
+      <div class="stat"><span>Employer BPJS</span><b style="font-size:19px">${rp(run.total_employer_contribution)}</b></div>
+      <div class="stat"><span>Employer cost</span><b style="font-size:19px">${rp(run.total_employer_cost)}</b></div>
     </div>
 
     <div class="card" style="margin-top:16px">
@@ -605,6 +611,7 @@ export function runPage({ detail, flash, error }) {
           ? `<table>
               <thead><tr>
                 <th>Employee</th><th class="num">Base</th><th class="num">Allowance</th><th class="num">Overtime</th>
+                <th class="num">THR</th>
                 <th class="num">Gross</th><th class="num">BPJS</th><th class="num">PPh 21</th><th class="num">Net</th>
               </tr></thead>
               <tbody>${payslips
@@ -614,6 +621,7 @@ export function runPage({ detail, flash, error }) {
                     <td class="num">${rp(row.prorated_base)}</td>
                     <td class="num">${rp(row.allowance)}</td>
                     <td class="num">${rp(row.overtime_pay)}</td>
+                    <td class="num">${rp(row.thr_amount)}</td>
                     <td class="num">${rp(row.gross)}</td>
                     <td class="num">${rp(row.bpjs_kesehatan + row.bpjs_jht + row.bpjs_jp)}</td>
                     <td class="num">${rp(row.pph21)}</td>
@@ -622,7 +630,7 @@ export function runPage({ detail, flash, error }) {
                 )
                 .join('')}</tbody>
             </table>
-            <p class="muted" style="margin:14px 0 0">BPJS column combines Kesehatan 1%, JHT 2% and JP 1% of the prorated base. PPh 21 is the annual progressive tax spread over 12 months.</p>`
+            <p class="muted" style="margin:14px 0 0">BPJS column combines employee Kesehatan 1%, JHT 2% and JP 1% of the prorated base. PPh 21 is the annual progressive tax spread over 12 months. Employer contributions (Kesehatan 4%, JHT 3.7%, JP 2%, JKK 0.24%, JKM 0.30%) are company cost and are not deducted from net pay.</p>`
           : `<p class="empty">No payslips in this run.</p>`
       }
     </div>`,
@@ -707,6 +715,7 @@ export function payslipPage({ payslip: slip }) {
               ${absenceDeduction ? line(`Absence deduction (${unpaidDays} day${unpaidDays === 1 ? '' : 's'})`, `−${rp(absenceDeduction)}`) : ''}
               ${line('Fixed allowance', rp(slip.allowance))}
               ${line(`Overtime (${slip.overtime_hours} h × 1.5)`, slip.overtime_pay ? rp(slip.overtime_pay) : '—')}
+              ${slip.thr_amount ? line('THR (holiday allowance)', rp(slip.thr_amount)) : ''}
               ${line('<b>Gross earnings</b>', rp(slip.gross))}
             </tbody>
           </table>
@@ -733,6 +742,21 @@ export function payslipPage({ payslip: slip }) {
         </div>
         <div style="font-size:26px;font-weight:700;letter-spacing:-0.02em">${rp(slip.net_pay)}</div>
       </div>
+
+      ${slip.employer_total ? `
+      <hr>
+      <h3>Employer contributions · company cost, not deducted</h3>
+      <table>
+        <tbody>
+          ${line('BPJS Kesehatan (4%)', rp(slip.employer_bpjs_kesehatan))}
+          ${line('BPJS JHT (3.7%)', rp(slip.employer_bpjs_jht))}
+          ${line('BPJS JP (2%)', rp(slip.employer_bpjs_jp))}
+          ${line('BPJS JKK (0.24%)', rp(slip.employer_bpjs_jkk))}
+          ${line('BPJS JKM (0.30%)', rp(slip.employer_bpjs_jkm))}
+          ${line('<b>Total employer contributions</b>', rp(slip.employer_total))}
+          ${line('<b>Total employer cost</b> · gross + contributions', rp(slip.gross + slip.employer_total))}
+        </tbody>
+      </table>` : ''}
 
       <p class="muted" style="margin:16px 0 0;font-size:12px">
         Demo payslip · run #${slip.run_id} · issued ${esc(issued)} · not a tax invoice.
