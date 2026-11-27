@@ -21,6 +21,36 @@ Requires Node 24+ (developed on Node 26) because it uses the built-in
 Environment variables: `PORT` (default `3000`), `HOST` (default `127.0.0.1`),
 `HRIS_DB` (default `data/hris.db`).
 
+## Deploy
+
+There is no build step and nothing to install, so the image is Node 24 plus `src/`.
+
+```bash
+docker compose up -d --build      # http://127.0.0.1:3000
+docker compose logs -f
+```
+
+The SQLite database lives in the `hris-data` volume, so `docker compose down`
+keeps it and `docker compose down -v` starts over. Without Compose:
+
+```bash
+docker build -t yuki-hris-demo .
+docker run -d --name hris -p 3000:3000 -v hris-data:/data yuki-hris-demo
+```
+
+On any other Node 24 host:
+
+```bash
+HOST=0.0.0.0 PORT=3000 HRIS_DB=/var/lib/hris/hris.db npm start
+```
+
+`HOST` must be `0.0.0.0` for a container or reverse proxy to reach the app. Keep
+`HRIS_DB` on a persistent disk — the database is the only state. `/health` is the
+readiness probe and the image already declares it as its health check.
+
+**This app has no authentication and speaks plain HTTP.** Put TLS and the hostname
+in front of it, and do not expose the port directly to the internet.
+
 ## The demo flow
 
 1. **Employees → New employee.** The employee number is generated (`EMP-0001`,
@@ -125,4 +155,6 @@ src/store.js     validation, contracts, attendance, payroll runs
 src/views.js     server-rendered pages
 src/server.js    HTTP routing (JSON API + HTML forms)
 test/            unit and end-to-end tests
+Dockerfile       image for any Node 24 host
+docker-compose.yml  one-command run with a persistent data volume
 ```

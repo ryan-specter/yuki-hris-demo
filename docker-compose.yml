@@ -1,0 +1,16 @@
+services:
+  hris:
+    build: .
+    image: yuki-hris-demo
+    ports:
+      - "3000:3000"
+    environment:
+      HOST: 0.0.0.0
+      PORT: "3000"
+      HRIS_DB: /data/hris.db
+    volumes:
+      - hris-data:/data
+    restart: unless-stopped
+
+volumes:
+  hris-data:
