@@ -1,5 +1,7 @@
 # Yuki Tera Workforce — demo HRIS
 
+[![CI](https://github.com/ryan-specter/yuki-hris-demo/actions/workflows/ci.yml/badge.svg)](https://github.com/ryan-specter/yuki-hris-demo/actions/workflows/ci.yml)
+
 A small, dependency-free HRIS demo: create a new employee, give them a salary
 contract, record a month of attendance, run payroll, and complete the run so
 payslips are issued. Data lives in SQLite.
