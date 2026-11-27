@@ -3,6 +3,7 @@ import { after, before, test } from 'node:test';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { toCsv } from '../src/csv.js';
 
 let server;
 let base;
@@ -21,7 +22,12 @@ const call = async (method, route, body) => {
   } catch {
     data = text;
   }
-  return { status: response.status, data, text };
+  return {
+    status: response.status,
+    data,
+    text,
+    headers: Object.fromEntries(response.headers.entries()),
+  };
 };
 
 before(async () => {
@@ -238,6 +244,41 @@ test('a payslip has API and printable pages', async () => {
 
   const missingPage = await call('GET', '/payslips/999');
   assert.equal(missingPage.status, 404);
+});
+
+test('CSV escaping quotes fields that need it', () => {
+  const csv = toCsv(['name', 'note'], [["O'Brien, Sari", 'a "quoted" note']]);
+  assert.equal(csv, '\uFEFFname,note\r\n"O\'Brien, Sari","a ""quoted"" note"\r\n');
+});
+
+test('CSV exports cover runs and payslips', async () => {
+  const runs = await call('GET', '/payroll/export.csv');
+  assert.equal(runs.status, 200);
+  assert.match(runs.headers['content-type'], /text\/csv/);
+  assert.match(runs.headers['content-disposition'], /payroll-runs\.csv/);
+
+  const runLines = runs.text.replace(/^\uFEFF/, '').trim().split(/\r?\n/);
+  assert.equal(
+    runLines[0],
+    'period,status,employees,gross,net,thr,employer_contribution,employer_cost,created_at,completed_at',
+  );
+  assert.ok(runLines.some((line) => line.startsWith('2026-11,completed,2,')));
+
+  const payslips = await call('GET', '/payroll/1/export.csv');
+  assert.equal(payslips.status, 200);
+  assert.match(payslips.headers['content-disposition'], /payroll-payslips-2026-11\.csv/);
+
+  const lines = payslips.text.replace(/^\uFEFF/, '').trim().split(/\r?\n/);
+  assert.match(lines[0], /^period,employee_no,full_name,bank_account,/);
+
+  const ayu = lines.find((line) => line.startsWith('2026-11,EMP-0001,'));
+  assert.ok(ayu, 'payslip row for EMP-0001');
+  assert.ok(ayu.includes('BCA 1234567890'));
+  assert.ok(ayu.includes(',8672500,'));
+  assert.ok(ayu.includes('PAY-2026-11-EMP-0001'));
+
+  const missing = await call('GET', '/payroll/999/export.csv');
+  assert.equal(missing.status, 404);
 });
 
 test('THR and employer contributions are included when requested', async () => {

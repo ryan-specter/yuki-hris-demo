@@ -78,9 +78,16 @@ that decides which period actually pays THR (the run simply offers a flag).
 | `GET` | `/api/payroll/runs/:id` | run with payslips |
 | `POST` | `/api/payroll/runs/:id/complete` | lock the run and issue payslips |
 | `GET` | `/api/payslips/:id` | one payslip with employee and run details |
+| `GET` | `/payroll/export.csv` | every run with totals, as CSV |
+| `GET` | `/payroll/:id/export.csv` | run payslips as CSV, with bank and transfer columns |
 
 Each payslip also has a printable page at `/payslips/:id` (Print / save PDF hides
 the navigation), linked from the run and the employee page.
+
+The run CSV carries `bank_account`, `net_pay` and a `transfer_reference`
+(`PAY-<period>-<employee_no>`) per employee next to the full earnings and
+deduction breakdown, so it can drive a bank transfer file or be opened in a
+spreadsheet.
 
 Example:
 

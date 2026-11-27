@@ -235,7 +235,8 @@ export function runDetail(db, runId) {
   if (!run) return null;
   const payslips = db
     .prepare(
-      `SELECT p.*, e.full_name AS full_name, e.employee_no AS employee_no
+      `SELECT p.*, e.full_name AS full_name, e.employee_no AS employee_no,
+              e.bank_account AS bank_account
          FROM payslips p
          JOIN employees e ON e.id = p.employee_id
         WHERE p.run_id = ?

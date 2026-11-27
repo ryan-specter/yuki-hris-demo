@@ -1,4 +1,5 @@
 import http from 'node:http';
+import { toCsv } from './csv.js';
 import { openDb } from './db.js';
 import { HttpError } from './errors.js';
 import * as store from './store.js';
@@ -58,6 +59,15 @@ function sendHtml(res, status, markup) {
 function redirect(res, location) {
   res.writeHead(303, { location });
   res.end();
+}
+
+function sendCsv(res, filename, csv) {
+  res.writeHead(200, {
+    'content-type': 'text/csv; charset=utf-8',
+    'content-disposition': `attachment; filename="${filename}"`,
+    'content-length': Buffer.byteLength(csv),
+  });
+  res.end(csv);
 }
 
 const flashFor = (params) => {
@@ -223,6 +233,69 @@ async function handle(req, res) {
       const payslip = store.payslipDetail(db, Number(match[1]));
       if (!payslip) throw new HttpError(404, 'payslip not found');
       return html(200, payslipPage({ payslip }));
+    }
+
+    if (method === 'GET' && path === '/payroll/export.csv') {
+      const runs = store.listRuns(db);
+      const csv = toCsv(
+        ['period', 'status', 'employees', 'gross', 'net', 'thr', 'employer_contribution', 'employer_cost', 'created_at', 'completed_at'],
+        runs.map((run) => [
+          run.period,
+          run.status,
+          run.employee_count,
+          run.total_gross,
+          run.total_net,
+          run.total_thr,
+          run.total_employer_contribution,
+          run.total_employer_cost,
+          run.created_at,
+          run.completed_at,
+        ]),
+      );
+      return sendCsv(res, 'payroll-runs.csv', csv);
+    }
+
+    match = path.match(/^\/payroll\/(\d+)\/export\.csv$/);
+    if (method === 'GET' && match) {
+      const detail = store.runDetail(db, Number(match[1]));
+      if (!detail) throw new HttpError(404, 'payroll run not found');
+      const csv = toCsv(
+        [
+          'period', 'employee_no', 'full_name', 'bank_account',
+          'working_days', 'present_days', 'paid_leave_days', 'unpaid_leave_days', 'overtime_hours',
+          'base_salary', 'prorated_base', 'allowance', 'overtime_pay', 'thr_amount', 'gross',
+          'bpjs_kesehatan', 'bpjs_jht', 'bpjs_jp', 'pph21', 'total_deductions', 'net_pay',
+          'employer_total', 'employer_cost', 'transfer_reference', 'status',
+        ],
+        detail.payslips.map((slip) => [
+          detail.run.period,
+          slip.employee_no,
+          slip.full_name,
+          slip.bank_account,
+          slip.working_days,
+          slip.present_days,
+          slip.paid_leave_days,
+          slip.unpaid_leave_days,
+          slip.overtime_hours,
+          slip.base_salary,
+          slip.prorated_base,
+          slip.allowance,
+          slip.overtime_pay,
+          slip.thr_amount,
+          slip.gross,
+          slip.bpjs_kesehatan,
+          slip.bpjs_jht,
+          slip.bpjs_jp,
+          slip.pph21,
+          slip.total_deductions,
+          slip.net_pay,
+          slip.employer_total,
+          slip.gross + slip.employer_total,
+          `PAY-${detail.run.period}-${slip.employee_no}`,
+          detail.run.status,
+        ]),
+      );
+      return sendCsv(res, `payroll-payslips-${detail.run.period}.csv`, csv);
     }
 
     if (method === 'GET' && path === '/payroll') {

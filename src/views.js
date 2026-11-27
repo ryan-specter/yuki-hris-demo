@@ -530,6 +530,7 @@ export function payrollPage({ runs, employeesReady, flash, error, defaultPeriod 
         <h1>Payroll</h1>
         <p class="lede">A run snapshots attendance and contracts for one period and issues a payslip per employee. Completing it locks the run.</p>
       </div>
+      <a class="btn secondary" href="/payroll/export.csv">Export runs CSV</a>
     </div>
 
     <div class="card">
@@ -600,11 +601,14 @@ export function runPage({ detail, flash, error }) {
     <div class="card" style="margin-top:16px">
       <div class="topbar" style="align-items:center">
         <h2 style="margin:0">Payslips</h2>
-        ${
-          completed
-            ? `<span class="pill ok">Payroll completed</span>`
-            : `<form method="post" action="/payroll/runs/${run.id}/complete"><button type="submit">Complete payroll</button></form>`
-        }
+        <div class="actions">
+          <a class="btn secondary" href="/payroll/${run.id}/export.csv">Export payslips CSV</a>
+          ${
+            completed
+              ? `<span class="pill ok">Payroll completed</span>`
+              : `<form method="post" action="/payroll/runs/${run.id}/complete"><button type="submit">Complete payroll</button></form>`
+          }
+        </div>
       </div>
       ${
         payslips.length
