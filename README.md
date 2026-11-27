@@ -12,8 +12,9 @@ npm start          # http://127.0.0.1:3000
 npm test           # payroll unit tests + HTTP flow tests
 ```
 
-Requires Node 22.5+ (developed on Node 26) because it uses the built-in
-`node:sqlite` driver. There is nothing to install.
+Requires Node 24+ (developed on Node 26) because it uses the built-in
+`node:sqlite` driver. There is nothing to install. GitHub Actions runs
+`npm test` on every push to `main` and every pull request (`.github/workflows/ci.yml`).
 
 Environment variables: `PORT` (default `3000`), `HOST` (default `127.0.0.1`),
 `HRIS_DB` (default `data/hris.db`).

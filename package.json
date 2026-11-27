@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Demo HRIS: onboard an employee, capture attendance, run payroll, issue payslips.",
   "engines": {
-    "node": ">=22.5"
+    "node": ">=24"
   },
   "scripts": {
     "start": "node src/server.js",
