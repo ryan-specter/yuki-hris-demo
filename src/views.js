@@ -49,6 +49,7 @@ h3 { font-size: 13px; margin: 0 0 10px; color: var(--muted); text-transform: upp
 .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 20px; margin-bottom: 18px; }
 .grid { display: grid; gap: 16px; }
 .grid.cols-2 { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+.grid.cols-3 { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); grid-auto-rows: 1fr; }
 .grid.cols-4 { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
 .stat { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; }
 .stat b { display: block; font-size: 24px; letter-spacing: -0.02em; margin-top: 4px; }
@@ -349,11 +350,11 @@ export function employeePage({ detail, flash, error, defaultPeriod }) {
       <div class="row">
         <div class="field">
           <label for="base_salary">Base salary (Rp)</label>
-          <input id="base_salary" name="base_salary" type="number" min="1" step="1000" required placeholder="8500000">
+          <input id="base_salary" name="base_salary" type="number" min="1" step="any" required placeholder="8500000">
         </div>
         <div class="field">
           <label for="allowance">Fixed allowance (Rp)</label>
-          <input id="allowance" name="allowance" type="number" min="0" step="1000" value="0">
+          <input id="allowance" name="allowance" type="number" min="0" step="any" value="0">
         </div>
       </div>
       <div class="row">
@@ -589,7 +590,7 @@ export function runPage({ detail, flash, error }) {
       <span class="pill ${completed ? 'ok' : 'draft'}">${esc(run.status)}</span>
     </div>
 
-    <div class="grid cols-4">
+    <div class="grid cols-3">
       <div class="stat"><span>Employees</span><b>${payslips.length}</b></div>
       <div class="stat"><span>Gross</span><b style="font-size:19px">${rp(run.total_gross)}</b></div>
       <div class="stat"><span>Net</span><b style="font-size:19px">${rp(run.total_net)}</b></div>

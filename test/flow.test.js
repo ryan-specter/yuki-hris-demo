@@ -220,6 +220,21 @@ test('the rendered pages expose the demo flow', async () => {
   assert.equal(missing.status, 404);
 });
 
+test('salary inputs do not silently reject ordinary rupiah amounts', async () => {
+  const employee = await call('GET', '/employees/1');
+  assert.equal(employee.status, 200);
+
+  const salaryInput = employee.text.match(/<input id="base_salary"[^>]*>/)[0];
+  const allowanceInput = employee.text.match(/<input id="allowance"[^>]*>/)[0];
+
+  // step="1000" with min="1" makes the browser treat 8,500,000 as a step
+  // mismatch, blocking submit before the request is ever sent.
+  for (const input of [salaryInput, allowanceInput]) {
+    assert.match(input, /step="any"/);
+    assert.doesNotMatch(input, /step="1000"/);
+  }
+});
+
 test('a payslip has API and printable pages', async () => {
   const api = await call('GET', '/api/payslips/1');
   assert.equal(api.status, 200);
