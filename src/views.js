@@ -18,6 +18,7 @@ const CSS = `
 * { box-sizing: border-box; }
 body {
   margin: 0;
+  -webkit-text-size-adjust: 100%;
   font: 14px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   color: var(--ink);
   background: var(--bg);
@@ -49,9 +50,9 @@ h3 { font-size: 13px; margin: 0 0 10px; color: var(--muted); text-transform: upp
 .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 20px; margin-bottom: 18px; }
 .grid { display: grid; gap: 16px; }
 .grid > * { min-width: 0; }
-.grid.cols-2 { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
-.grid.cols-3 { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); grid-auto-rows: 1fr; }
-.grid.cols-4 { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+.grid.cols-2 { grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr)); }
+.grid.cols-3 { grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr)); grid-auto-rows: 1fr; }
+.grid.cols-4 { grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr)); }
 .stat { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; }
 .stat b { display: block; font-size: 24px; letter-spacing: -0.02em; margin-top: 4px; }
 .stat span { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .06em; }
@@ -112,11 +113,15 @@ button:hover, .btn:hover { background: #1a43bd; text-decoration: none; }
 hr { border: 0; border-top: 1px solid var(--line); margin: 18px 0; }
 @media (max-width: 760px) {
   .shell { grid-template-columns: minmax(0, 1fr); align-content: start; }
-  .sidebar { flex-direction: row; align-items: center; gap: 14px; padding: 12px; overflow-x: auto; }
+  .sidebar { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 10px 14px; padding: 12px; }
   .sidebar footer, .brand span { display: none; }
-  nav { flex-direction: row; }
+  /* Full-width tab row: a scrolling nav would hide "Payroll" at 320px. */
+  nav { flex-direction: row; width: 100%; gap: 4px; }
+  nav a { flex: 1; text-align: center; padding: 8px 6px; }
   main { padding: 20px 16px 40px; }
   .topbar { margin-bottom: 16px; }
+  /* Anything below 16px makes iOS zoom the page on focus. */
+  input, select, textarea { font-size: 16px; }
   /* Multi-column tables keep their shape and scroll; two-column key/value
      tables stay full width so amounts are never pushed off-screen. */
   .table-wrap table:has(tbody tr td:nth-child(4)) { width: max-content; min-width: 100%; }
