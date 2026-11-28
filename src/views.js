@@ -24,7 +24,7 @@ body {
 }
 a { color: var(--brand); text-decoration: none; }
 a:hover { text-decoration: underline; }
-.shell { display: grid; grid-template-columns: 232px 1fr; min-height: 100vh; }
+.shell { display: grid; grid-template-columns: 232px minmax(0, 1fr); min-height: 100vh; }
 .sidebar {
   background: #0b1220;
   color: #c7d0de;
@@ -40,7 +40,7 @@ nav a { color: #c7d0de; padding: 8px 10px; border-radius: 8px; font-weight: 500;
 nav a:hover { background: #16203a; text-decoration: none; color: #fff; }
 nav a.active { background: #1c2b4d; color: #fff; }
 .sidebar footer { margin-top: auto; font-size: 12px; color: #7f8da3; }
-main { padding: 30px 36px 60px; max-width: 1080px; }
+main { padding: 30px 36px 60px; max-width: 1080px; min-width: 0; }
 h1 { font-size: 24px; letter-spacing: -0.02em; margin: 0 0 6px; }
 h2 { font-size: 15px; margin: 0 0 14px; }
 h3 { font-size: 13px; margin: 0 0 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
@@ -48,6 +48,7 @@ h3 { font-size: 13px; margin: 0 0 10px; color: var(--muted); text-transform: upp
 .topbar { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; flex-wrap: wrap; }
 .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 20px; margin-bottom: 18px; }
 .grid { display: grid; gap: 16px; }
+.grid > * { min-width: 0; }
 .grid.cols-2 { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
 .grid.cols-3 { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); grid-auto-rows: 1fr; }
 .grid.cols-4 { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
@@ -55,10 +56,12 @@ h3 { font-size: 13px; margin: 0 0 10px; color: var(--muted); text-transform: upp
 .stat b { display: block; font-size: 24px; letter-spacing: -0.02em; margin-top: 4px; }
 .stat span { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .06em; }
 table { width: 100%; border-collapse: collapse; }
+/* Wide tables scroll inside their card instead of widening the page. */
+.table-wrap { overflow-x: auto; max-width: 100%; -webkit-overflow-scrolling: touch; }
 th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
 th { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; }
-tbody tr:last-child td { border-bottom: none; }
-td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+tbody tr:last-child th, tbody tr:last-child td { border-bottom: none; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .pill { display: inline-block; font-size: 11px; font-weight: 650; padding: 2px 9px; border-radius: 999px; letter-spacing: .02em; }
 .pill.ok { color: var(--ok); background: var(--ok-soft); }
 .pill.draft { color: var(--warn); background: var(--warn-soft); }
@@ -108,11 +111,15 @@ button:hover, .btn:hover { background: #1a43bd; text-decoration: none; }
 .actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 hr { border: 0; border-top: 1px solid var(--line); margin: 18px 0; }
 @media (max-width: 760px) {
-  .shell { grid-template-columns: 1fr; }
+  .shell { grid-template-columns: minmax(0, 1fr); align-content: start; }
   .sidebar { flex-direction: row; align-items: center; gap: 14px; padding: 12px; overflow-x: auto; }
   .sidebar footer, .brand span { display: none; }
   nav { flex-direction: row; }
   main { padding: 20px 16px 40px; }
+  .topbar { margin-bottom: 16px; }
+  /* Multi-column tables keep their shape and scroll; two-column key/value
+     tables stay full width so amounts are never pushed off-screen. */
+  .table-wrap table:has(tbody tr td:nth-child(4)) { width: max-content; min-width: 100%; }
 }
 `;
 
@@ -225,7 +232,7 @@ export function dashboardPage({ stats, employees }) {
       </div>
       ${
         employees.length
-          ? `<table>
+          ? `<div class="table-wrap"><table>
               <thead><tr><th>No.</th><th>Name</th><th>Position</th><th class="num">Base salary</th><th>Status</th></tr></thead>
               <tbody>${employees
                 .slice(0, 8)
@@ -239,7 +246,7 @@ export function dashboardPage({ stats, employees }) {
                   </tr>`,
                 )
                 .join('')}</tbody>
-            </table>`
+            </table></div>`
           : `<p class="empty">No employees yet. <a href="/employees/new">Create the first one</a>.</p>`
       }
     </div>`,
@@ -262,7 +269,7 @@ export function employeesPage({ employees, flash }) {
     <div class="card">
       ${
         employees.length
-          ? `<table>
+          ? `<div class="table-wrap"><table>
               <thead><tr><th>No.</th><th>Name</th><th>Department</th><th>Joined</th><th class="num">Base salary</th><th class="num">Allowance</th></tr></thead>
               <tbody>${employees
                 .map(
@@ -276,7 +283,7 @@ export function employeesPage({ employees, flash }) {
                   </tr>`,
                 )
                 .join('')}</tbody>
-            </table>`
+            </table></div>`
           : `<p class="empty">No employees yet.</p>`
       }
     </div>`,
@@ -455,7 +462,7 @@ export function employeePage({ detail, flash, error, defaultPeriod }) {
         <hr>
         ${
           attendance.length
-            ? `<table>
+            ? `<div class="table-wrap"><table>
                 <thead><tr><th>Period</th><th class="num">Work</th><th class="num">Present</th><th class="num">Leave</th><th class="num">OT</th></tr></thead>
                 <tbody>${attendance
                   .map(
@@ -468,7 +475,7 @@ export function employeePage({ detail, flash, error, defaultPeriod }) {
                     </tr>`,
                   )
                   .join('')}</tbody>
-              </table>`
+              </table></div>`
             : `<p class="empty">No attendance recorded yet.</p>`
         }
       </div>
@@ -478,7 +485,7 @@ export function employeePage({ detail, flash, error, defaultPeriod }) {
       <h2>Payslips</h2>
       ${
         payslips.length
-          ? `<table>
+          ? `<div class="table-wrap"><table>
               <thead><tr><th>Period</th><th class="num">Gross</th><th class="num">BPJS + PPh 21</th><th class="num">Net pay</th><th>Run</th></tr></thead>
               <tbody>${payslips
                 .map(
@@ -491,7 +498,7 @@ export function employeePage({ detail, flash, error, defaultPeriod }) {
                   </tr>`,
                 )
                 .join('')}</tbody>
-            </table>`
+            </table></div>`
           : `<p class="empty">No payslips yet. Record attendance, then run payroll.</p>`
       }
     </div>
@@ -500,7 +507,7 @@ export function employeePage({ detail, flash, error, defaultPeriod }) {
       contracts.length > 1
         ? `<div class="card">
              <h2>Contract history</h2>
-             <table>
+             <div class="table-wrap"><table>
                <thead><tr><th>Effective from</th><th>Effective to</th><th class="num">Base</th><th class="num">Allowance</th></tr></thead>
                <tbody>${contracts
                  .map(
@@ -512,7 +519,7 @@ export function employeePage({ detail, flash, error, defaultPeriod }) {
                    </tr>`,
                  )
                  .join('')}</tbody>
-             </table>
+             </table></div>
            </div>`
         : ''
     }`,
@@ -551,7 +558,7 @@ export function payrollPage({ runs, employeesReady, flash, error, defaultPeriod 
       <h2>Runs</h2>
       ${
         runs.length
-          ? `<table>
+          ? `<div class="table-wrap"><table>
               <thead><tr><th>Period</th><th>Status</th><th class="num">Employees</th><th class="num">Gross</th><th class="num">Net</th><th>Created</th></tr></thead>
               <tbody>${runs
                 .map(
@@ -565,7 +572,7 @@ export function payrollPage({ runs, employeesReady, flash, error, defaultPeriod 
                   </tr>`,
                 )
                 .join('')}</tbody>
-            </table>`
+            </table></div>`
           : `<p class="empty">No runs yet.</p>`
       }
     </div>`,
@@ -613,7 +620,7 @@ export function runPage({ detail, flash, error }) {
       </div>
       ${
         payslips.length
-          ? `<table>
+          ? `<div class="table-wrap"><table>
               <thead><tr>
                 <th>Employee</th><th class="num">Base</th><th class="num">Allowance</th><th class="num">Overtime</th>
                 <th class="num">THR</th>
@@ -634,7 +641,7 @@ export function runPage({ detail, flash, error }) {
                   </tr>`,
                 )
                 .join('')}</tbody>
-            </table>
+            </table></div>
             <p class="muted" style="margin:14px 0 0">BPJS column combines employee Kesehatan 1%, JHT 2% and JP 1% of the prorated base. PPh 21 is the annual progressive tax spread over 12 months. Employer contributions (Kesehatan 4%, JHT 3.7%, JP 2%, JKK 0.24%, JKM 0.30%) are company cost and are not deducted from net pay.</p>`
           : `<p class="empty">No payslips in this run.</p>`
       }
@@ -714,7 +721,7 @@ export function payslipPage({ payslip: slip }) {
       <div class="grid cols-2">
         <div>
           <h3>Earnings</h3>
-          <table>
+          <div class="table-wrap"><table>
             <tbody>
               ${line('Base salary', rp(slip.base_salary))}
               ${absenceDeduction ? line(`Absence deduction (${unpaidDays} day${unpaidDays === 1 ? '' : 's'})`, `−${rp(absenceDeduction)}`) : ''}
@@ -723,11 +730,11 @@ export function payslipPage({ payslip: slip }) {
               ${slip.thr_amount ? line('THR (holiday allowance)', rp(slip.thr_amount)) : ''}
               ${line('<b>Gross earnings</b>', rp(slip.gross))}
             </tbody>
-          </table>
+          </table></div>
         </div>
         <div>
           <h3>Deductions</h3>
-          <table>
+          <div class="table-wrap"><table>
             <tbody>
               ${line('BPJS Kesehatan (1%)', rp(slip.bpjs_kesehatan))}
               ${line('BPJS JHT (2%)', rp(slip.bpjs_jht))}
@@ -736,7 +743,7 @@ export function payslipPage({ payslip: slip }) {
               ${slip.other_deduction ? line('Other deduction', rp(slip.other_deduction)) : ''}
               ${line('<b>Total deductions</b>', rp(slip.total_deductions))}
             </tbody>
-          </table>
+          </table></div>
         </div>
       </div>
 
@@ -751,7 +758,7 @@ export function payslipPage({ payslip: slip }) {
       ${slip.employer_total ? `
       <hr>
       <h3>Employer contributions · company cost, not deducted</h3>
-      <table>
+      <div class="table-wrap"><table>
         <tbody>
           ${line('BPJS Kesehatan (4%)', rp(slip.employer_bpjs_kesehatan))}
           ${line('BPJS JHT (3.7%)', rp(slip.employer_bpjs_jht))}
@@ -761,7 +768,7 @@ export function payslipPage({ payslip: slip }) {
           ${line('<b>Total employer contributions</b>', rp(slip.employer_total))}
           ${line('<b>Total employer cost</b> · gross + contributions', rp(slip.gross + slip.employer_total))}
         </tbody>
-      </table>` : ''}
+      </table></div>` : ''}
 
       <p class="muted" style="margin:16px 0 0;font-size:12px">
         Demo payslip · run #${slip.run_id} · issued ${esc(issued)} · not a tax invoice.
