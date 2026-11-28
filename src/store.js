@@ -43,7 +43,11 @@ function normalizeDate(value, field, fallback = todayIso()) {
   if (!raw) return fallback;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) throw new HttpError(422, `${field} must use the YYYY-MM-DD format`);
   const parsed = new Date(`${raw}T00:00:00Z`);
-  if (Number.isNaN(parsed.getTime())) throw new HttpError(422, `${field} is not a valid date`);
+  // A day the calendar does not have still parses (2026-02-31 becomes March
+  // 3), so the string must round-trip before it is stored.
+  if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== raw) {
+    throw new HttpError(422, `${field} is not a valid date`);
+  }
   return raw;
 }
 

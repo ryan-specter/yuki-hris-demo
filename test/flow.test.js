@@ -367,3 +367,34 @@ test('the HTML form flow creates an employee and redirects', async () => {
   assert.equal(response.status, 303);
   assert.match(response.headers.get('location'), /^\/employees\/\d+\?created=1$/);
 });
+
+test('a date the calendar does not have is rejected', async () => {
+  // 2026-02-31 parses as March 3, so format-only validation stored it verbatim.
+  const badJoin = await call('POST', '/api/employees', {
+    full_name: 'Impossible Date',
+    join_date: '2026-02-31',
+  });
+  assert.equal(badJoin.status, 422);
+  assert.match(badJoin.data.error, /join_date is not a valid date/);
+
+  const badContract = await call('POST', '/api/employees/1/contracts', {
+    base_salary: 5_000_000,
+    effective_from: '2026-04-31',
+  });
+  assert.equal(badContract.status, 422);
+  assert.match(badContract.data.error, /effective_from is not a valid date/);
+
+  const nonLeap = await call('POST', '/api/employees/1/contracts', {
+    base_salary: 5_000_000,
+    effective_from: '2027-02-29',
+  });
+  assert.equal(nonLeap.status, 422);
+
+  // A leap day that exists must still be accepted.
+  const leap = await call('POST', '/api/employees/1/contracts', {
+    base_salary: 5_000_000,
+    effective_from: '2028-02-29',
+  });
+  assert.equal(leap.status, 201);
+  assert.equal(leap.data.contract.effective_from, '2028-02-29');
+});
